@@ -1,0 +1,171 @@
+---
+title: "Homework 5"
+author: "James Kolesar"
+date: "4/30/2020"
+output: html_document
+---
+
+# 9
+
+```{r}
+library(readxl)
+library(boot)
+library(MASS)
+library(ggplot2)
+ggplot(data = Boston, aes(x = medv)) +
+  geom_histogram(binwidth = 1)
+```
+
+## (a)
+
+
+```{r}
+attach(Boston)
+summary(medv)
+```
+
+Based on our given information, it looks like our predicted mean for the population, or $\hat{\mu}$, is 22.53.
+
+## (b)
+
+```{r}
+sd(medv)
+length(medv)
+sd(medv)/sqrt(506)
+```
+
+We've got a theoretical predicted standard error of 0.40886. Given that as we add to our population, the standard deviation is going to decrease, we need to divide by some amount to compensate for the limited scope of our own sample.
+
+## (c)
+
+```{r}
+set.seed(5)
+B = 10000
+medv.boot = numeric(B)
+for(i in 1:B){
+  medv.boot[i] = mean(medv[sample(506, 506, replace = TRUE)])
+}
+sd(medv.boot)
+```
+
+Using bootstrap we can measure the standard error of any of our sample statistics calculating its bootstrap and finding the standard error of that list. In our case we can see it pretty much matches up with our theoretical standard error, and in any bootstrap there is a decent amount of variance based on your seed. Experimenting with different seeds results in numbers ranging around .40886.
+
+## (d)
+
+```{r}
+quantile(medv.boot, .025)
+quantile(medv.boot, .975)
+```
+
+```{r}
+t.test(medv)
+```
+
+Again, we can use our bootstrap to find the 95% confidence interval of our sample statistic simply by looking at the 2.5 and 97.5 percentile values of our means in the bootstrap, which comes out to (21.73437, 23.34605). Also similarly to our bootstrap-obtained standard error, there's a bit of variance in what values we'll get due to the random nature of bootstrap, but our confidence interval looks pretty close to that of our t-test: (21.72953, 23.33608).
+
+## (e)
+
+```{r}
+summary(medv)
+```
+
+Again looking at the data given, we can an estimate for the median value of the population, that being 21.20.
+
+## (f)
+
+```{r}
+set.seed(5)
+B = 10000
+medv.boot.median = numeric(B)
+for(i in 1:B){
+  medv.boot.median[i] = median(medv[sample(506, 506, replace = TRUE)])
+}
+mean(medv.boot.median)
+sd(medv.boot.median)
+```
+
+Now that we're looking for info on the median, we can just make a separate bootstrap using the median as our sample statistic. Looking at the mean of our bootstrap gives us confirmation that we've gathered a bunch of medians, as it's quite similar to our initial prediction of 21.20. Just like with the mean bootstrap earlier, our standard deviation gives us the standard error, which comes out to .3765755. Given our data it makes sense that the median would have a bit less standard error than the mean, since there are so many points at 50, which matter much more to the mean than the median. They could skew the mean if they're overrepresented, which is likely since there are so many of them. Our median standard error should be especially small as well, since there are so many values right at our median, there will be a large chunk of points in the middle of our data with points similar to the median. This means that the likelihood of the median being far away from what we predicted is very slim.
+
+## (g)
+
+```{r}
+quantile(medv, .1)
+```
+
+There's our tenth percentile. Not too much to say here.
+
+## (h)
+
+```{r}
+set.seed(5)
+B = 10000
+medv.boot.tenth = numeric(B)
+for(i in 1:B){
+  medv.boot.tenth[i] = quantile(medv[sample(506, 506, replace = TRUE)], .1)
+}
+mean(medv.boot.tenth)
+sd(medv.boot.tenth)
+```
+
+Another case of simply changing up our sample statistic from median to tenth percentile. Again we'll look at the mean to ensure that we're sampling tenth percentiles, which it looks like we are. Next we look at the standard deviation to determine our standard error, which comes out to 0.504957. This is larger than our median, which makes sense. There are less data points by the estimated tenth percentile, so it can more easily distance itself if earlier percentiles are under/overrepresented.
+
+#10
+
+```{r}
+CFB = read_excel("CFB2018completeISLR.xlsx")
+attach(CFB)
+```
+
+##a
+
+```{r}
+set.seed(1)
+length(Zsagarin)
+training.numbers = sample(857,643)
+```
+
+A nice 75/25 split for the training/test data.
+
+```{r}
+model1 = lm(Zsagarin~lysagarin + Fr5star + coachexp_school, subset = training.numbers)
+model2 = lm(Zsagarin~lysagarin + Fr5star + I(Fr5star^2) + coachexp_school + I(coachexp_school^2), subset = training.numbers)
+mean((Zsagarin-predict(model1,CFB))[-training.numbers]^2)
+mean((Zsagarin-predict(model2,CFB))[-training.numbers]^2)
+```
+
+We don't see the biggest difference in the world between the two, which makes sense as the models are pretty similar. The model that opts to include Fr5star^2 and coachexp_school^2 does have a lower mean difference squared for the linear model, so the argument could be made that what it loses in simplicity it more than makes up in accuracy. I see merit to either model.
+
+
+## (b)
+
+```{r}
+gmodel1 = glm(Zsagarin~lysagarin + Fr5star + coachexp_school)
+gmodel2 = glm(Zsagarin~lysagarin + Fr5star + I(Fr5star^2) + coachexp_school + I(coachexp_school^2))
+
+cv.error.1 = cv.glm(CFB,gmodel1)
+cv.error.2 = cv.glm(CFB,gmodel2)
+```
+
+```{r}
+cv.error.1$delta[1]
+cv.error.2$delta[1]
+```
+
+Once again, we observe the model with Fr5star^2 and coachexp_school^2 having less validation error.
+
+## (c)
+
+```{r}
+set.seed(1)
+cv.error.K.1 = cv.glm(CFB,gmodel1, K = 10)
+cv.error.K.2 = cv.glm(CFB,gmodel2, K = 10)
+```
+
+```{r}
+set.seed(2)
+cv.error.K.1$delta[1]
+cv.error.K.2$delta[1]
+```
+
+Similar to our validation set approach, we see some variance in our values. For most seeds we see, again, the model with the extra predictors having a lower amount of validation error. There are, however, seeds where the errors are just about the same, and even some where our slimmer model has less error than the one with Fr5star^2 and coachexp_school^2. That same variance also existed in our validation set approach. Due to the closeness and variance of our errors, I think my preferred model would be the one without the extra predictors, but I do admit I have a bit of a bias towards simpler models that tend to get a similar job done.
+
