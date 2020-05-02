@@ -1,0 +1,272 @@
+---
+title: "Homework 6"
+author: "James Kolesar"
+date: "5/2/2020"
+output: html_document
+---
+
+#9
+
+```{r}
+library(glmnet)
+library(pls)
+library(readxl)
+College <- read_excel("College.xlsx")
+```
+
+## (a)
+
+```{r}
+length(College$Apps)
+set.seed(1)
+training.numbers = sample(777,583)
+College.training = College[training.numbers,]
+College.test = College[-training.numbers,]
+```
+
+## (b)
+
+```{r}
+College.least.squares.training = lm(Apps ~ Private + Accept + Enroll + Top10perc + Top25perc + F.Undergrad + P.Undergrad + Outstate + Room.Board + Books + Personal + PhD + Terminal + S.F.Ratio + perc.alumni + Expend + Grad.Rate, data = College.training)
+
+mean((College$Apps-predict(College.least.squares.training, College))[-training.numbers]^2)
+```
+
+Least squares left us with a test error of 1,153,318
+
+## (c)
+
+```{r}
+x.training = model.matrix(Apps ~ Private + Accept + Enroll + Top10perc + Top25perc + F.Undergrad + P.Undergrad + Outstate + Room.Board + Books + Personal + PhD + Terminal + S.F.Ratio + perc.alumni + Expend + Grad.Rate, College.training)[,-1]
+
+y.training = College.training$Apps
+
+x.test = model.matrix(Apps ~ Private + Accept + Enroll + Top10perc + Top25perc + F.Undergrad + P.Undergrad + Outstate + Room.Board + Books + Personal + PhD + Terminal + S.F.Ratio + perc.alumni + Expend + Grad.Rate, College.test)[,-1]
+
+y.test = College.test$Apps
+
+grid = 10^seq(10, -2, length = 100)
+
+College.ridge.training.mod = glmnet(x.training, y.training, alpha = 0, lambda = grid, thresh=1e-12)
+```
+
+```{r}
+cv.out = cv.glmnet(x.training, y.training, alpha=0)
+
+plot(cv.out)
+```
+
+```{r}
+bestlam = cv.out$lambda.min
+
+bestlam
+```
+
+```{r}
+College.ridge.pred = predict(College.ridge.training.mod, s = bestlam, newx = x.test)
+
+mean((College.ridge.pred-y.test)^2)
+```
+
+Ridge Regression left us with a test error of 1,130,697
+
+## (d)
+
+```{r}
+College.lasso = glmnet(x.training, y.training, alpha = 1, lambda = grid)
+```
+
+```{r}
+cv.out = cv.glmnet(x.training, y.training, alpha = 1)
+plot(cv.out)
+```
+
+```{r}
+bestlam = cv.out$lambda.min
+bestlam
+```
+
+```{r}
+College.lasso.pred = predict(College.lasso, s = bestlam, newx = x.test)
+mean((College.lasso.pred - y.test)^2)
+```
+
+Lasso left us with a test error of 1,148,500
+
+## (e)
+
+```{r}
+College.pcr = pcr(Apps ~ Private + Accept + Enroll + Top10perc + Top25perc + F.Undergrad + P.Undergrad + Outstate + Room.Board + Books + Personal + PhD + Terminal + S.F.Ratio + perc.alumni + Expend + Grad.Rate, data = College.training, scale = TRUE, validation = "CV")
+
+summary(College.pcr)
+```
+
+```{r}
+validationplot(College.pcr, val.type = "MSEP")
+```
+
+Note that I'm assuming here that when the homework asks to choose M based on cross validation that we should choose whatever M that minimizes validation error. I was going to use 18, but it errored out when I tried to knit, so 17 will do.
+
+```{r}
+pcr.pred = predict(College.pcr, x.test, ncomp = 17)
+
+mean((pcr.pred-y.test)^2)
+```
+
+PCR left us with a test error of 1,153,318
+
+## (f)
+
+```{r}
+College.pls = plsr(Apps ~ Private + Accept + Enroll + Top10perc + Top25perc + F.Undergrad + P.Undergrad + Outstate + Room.Board + Books + Personal + PhD + Terminal + S.F.Ratio + perc.alumni + Expend + Grad.Rate, data = College.training, scale = TRUE, validation = "CV")
+
+validationplot(College.pls, val.type = "MSEP")
+```
+
+```{r}
+pls.pred = predict(College.pls, x.test, ncomp = 8)
+
+mean((pls.pred-y.test)^2)
+```
+
+PLS left us with a test error of 1,148,675
+
+## (g)
+
+Well it looks like the number of college applicants is pretty tough to predict using the other variables in our college data set, with test error ranging around 1.1-1.2 million. We should take this with a grain of salt, since the variable we were using was so high itself, but even taking that into account the error was still not promising at all. Despite this, our observations still showed us that there wasn't too much to gain by using our more complex modeling techniques. Since the error is about the same, the simplest model (least squares) becomes my personal model of choice. The lack of chance with models might have to do with our lack of relevant predictors in our model, as seen by our massive error. Almost... too massive. I mean, we are working with a variable ranging through the thousands, but 1.2 million? At that point is it even worth trying to predict? Something feels weird.
+
+```{r}
+summary(College$Apps)
+```
+
+Something feels... a bit off.
+
+```{r}
+plot(College.least.squares.training)
+```
+
+A bit off indeed. Our test error is totally thrown off thanks to Rutgers at New Brunswick's absolutely ridiculous effect on our data. I'm interested to see if removing this unruly outlier does anything to our test error, let's run through these models one more time.
+
+```{r}
+New.College = College[-484,]
+summary(New.College$Apps)
+```
+
+## (New.a)
+
+```{r}
+length(New.College$Apps)
+set.seed(1)
+training.numbers = sample(776,582)
+New.College.training = New.College[training.numbers,]
+New.College.test = New.College[-training.numbers,]
+```
+
+## (New.b)
+
+```{r}
+New.College.least.squares.training = lm(Apps ~ Private + Accept + Enroll + Top10perc + Top25perc + F.Undergrad + P.Undergrad + Outstate + Room.Board + Books + Personal + PhD + Terminal + S.F.Ratio + perc.alumni + Expend + Grad.Rate, data = New.College.training)
+
+mean((New.College$Apps-predict(New.College.least.squares.training, New.College))[-training.numbers]^2)
+```
+
+
+## (New.c)
+
+```{r}
+New.x.training = model.matrix(Apps ~ Private + Accept + Enroll + Top10perc + Top25perc + F.Undergrad + P.Undergrad + Outstate + Room.Board + Books + Personal + PhD + Terminal + S.F.Ratio + perc.alumni + Expend + Grad.Rate, New.College.training)[,-1]
+
+New.y.training = New.College.training$Apps
+
+New.x.test = model.matrix(Apps ~ Private + Accept + Enroll + Top10perc + Top25perc + F.Undergrad + P.Undergrad + Outstate + Room.Board + Books + Personal + PhD + Terminal + S.F.Ratio + perc.alumni + Expend + Grad.Rate, New.College.test)[,-1]
+
+New.y.test = New.College.test$Apps
+
+grid = 10^seq(10, -2, length = 100)
+
+New.College.ridge.training.mod = glmnet(New.x.training, New.y.training, alpha = 0, lambda = grid, thresh = 1e-12)
+```
+
+```{r}
+cv.out = cv.glmnet(New.x.training, New.y.training, alpha = 0)
+
+plot(cv.out)
+```
+
+```{r}
+bestlam = cv.out$lambda.min
+
+bestlam
+```
+
+```{r}
+New.College.ridge.pred = predict(New.College.ridge.training.mod, s = bestlam, newx = New.x.test)
+
+mean((New.College.ridge.pred - New.y.test)^2)
+```
+
+## (New.d)
+
+```{r}
+New.College.lasso = glmnet(New.x.training, New.y.training, alpha = 1, lambda=grid)
+```
+
+```{r}
+set.seed(1)
+cv.out = cv.glmnet(New.x.training, New.y.training, alpha = 1)
+plot(cv.out)
+```
+
+```{r}
+bestlam = cv.out$lambda.min
+bestlam
+```
+
+```{r}
+New.College.lasso.pred = predict(New.College.lasso, s = bestlam, newx = New.x.test)
+mean((New.College.lasso.pred - New.y.test)^2)
+```
+
+## (New.e)
+
+```{r}
+New.College.pcr = pcr(Apps ~ Private + Accept + Enroll + Top10perc + Top25perc + F.Undergrad + P.Undergrad + Outstate + Room.Board + Books + Personal + PhD + Terminal + S.F.Ratio + perc.alumni + Expend + Grad.Rate, data = New.College.training, scale = TRUE, validation = "CV")
+
+summary(New.College.pcr)
+```
+
+```{r}
+validationplot(New.College.pcr, val.type = "MSEP")
+```
+
+```{r}
+pcr.pred = predict(New.College.pcr, New.x.test, ncomp = 17)
+
+mean((pcr.pred - New.y.test)^2)
+```
+
+## (New.f)
+
+```{r}
+New.College.pls = plsr(Apps ~ Private + Accept + Enroll + Top10perc + Top25perc + F.Undergrad + P.Undergrad + Outstate + Room.Board + Books + Personal + PhD + Terminal + S.F.Ratio + perc.alumni + Expend + Grad.Rate, data = New.College.training, scale = TRUE, validation = "CV")
+
+validationplot(New.College.pls, val.type = "MSEP")
+```
+
+```{r}
+pls.pred = predict(New.College.pls, New.x.test, ncomp = 12)
+
+mean((pls.pred - New.y.test)^2)
+```
+
+## (New.g)
+
+```{r}
+plot(New.College.least.squares.training)
+```
+
+
+Somewhat as expected, we're seeing a stark decrease in our test error across the board (except for in ridge regression I'm convinced I've done something wrong with that one, because it doesn't exactly fall in line with the other complex models in my initial round of testing either. For the life of me, I can't figure out what the issue is). That one college, our of nearly 800, was causing about 19% of our test error.
+
+Sorry for getting a bit off topic with this one, it was all code and very little analysis so I got a bit antsy, plus that outlier was really getting under my skin.
+
