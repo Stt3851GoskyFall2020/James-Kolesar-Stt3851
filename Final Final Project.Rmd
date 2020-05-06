@@ -1,0 +1,224 @@
+---
+title: "An Exploratory Study on What Makes a House a Home"
+author: "Peter Gray, Ashley King, James Kolesar"
+date: '`r format(Sys.Date(), "%B %d %Y")`'
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+library(readxl)
+library(leaps)
+library(glmnet)
+library(ISLR)
+library(pls)
+```
+
+## (a) First candidate model: The model we arrived at in the last project
+
+```{r}
+housing = read_excel("Housing.xlsx")
+first.model = lm(log(housing$price) ~ I(housing$bath^3) + housing$lot + housing$garagesize)
+summary(first.model)
+```
+
+This model certainly isn't perfect, but it gets the job done in that it takes certain attributes of houses and uses them to predict its price. In terms of flaws, it looks like this model overcomplicates things. We have a great group of variables that should be able to accurately predict price without needing to use transformations. Even beyond that, the transformations that were chosen don't make all that much sense. Cubing the amount of bathrooms found in a house puts too much weight on that variable, disproportionate to the amount of importance usually placed on it. The number of bathrooms is definitely important, but it could easily be argued that a variable like the size of the house is more universally taken into account when assessing a home's characteristics. An even more astute argument would be that as the number of bathrooms increases it should have less and less importance to a homeowner. Going from 1 bath to 2 is a pretty big deal, especially for families of 4 or 5, but going from 2 baths to 3 would have less relevance for whether or not to buy a home, so cubing the value is counterintuitive in the sense that larger bathroom quantities shouldn't have more weight arbitrarily put on them. We're curious to see the optimized models that R goes with and how they'll compare to our initial model, not only in accuracy but also in style.
+
+## (b) Second candidate model: Using regsubsets over the entire data set
+
+```{r}
+regfit.housing = regsubsets(price ~ size + lot + bath + bedrooms + agestandardized + garagesize + status + elem, data = housing, nvmax = 18)
+reg.summary = summary(regfit.housing)
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(reg.summary$rsq,xlab="Number of Variables",ylab="R-squared",type="l")
+which.max(reg.summary$rsq)
+plot(reg.summary$adjr2,xlab="Number of Variables",ylab="Adjusted RSq",type="l")
+which.max(reg.summary$adjr2)
+points(9,reg.summary$adjr2[9], col="red",cex=2,pch=20)
+plot(reg.summary$cp,xlab="Number of Variables",ylab="Cp",type='l')
+which.min(reg.summary$cp)
+points(6,reg.summary$cp[6],col="red",cex=2,pch=20)
+which.min(reg.summary$bic)
+plot(reg.summary$bic,xlab="Number of Variables",ylab="BIC",type='l')
+points(6,reg.summary$bic[6],col="red",cex=2,pch=20)
+```
+
+```{r}
+plot(regfit.housing)
+```
+
+So there are a few very key things to note here. Firstly, regsubsets is viewing each of the different possible options for our categorical variables as their own unique variable. Creating a linear model including one of our categorical variables does the same thing, dividing it up into different predictors, each with their own coefficient. There's a bit of a discrepency, however, as regsubsets wants to use only certain aspects of each of our categorical variables and leave the others out, whereas our linear model doesn't want to separate the different options. In order to combat this, we'll rework our housing dataset to include a littany of dummy variables instead of just 2 categorical variables:
+
+```{r}
+new.housing = housing
+new.housing$statuspen = ifelse(new.housing$status == "pen", 1, 0)
+new.housing$statussld = ifelse(new.housing$status == "sld", 1, 0)
+new.housing$elemcrest = ifelse(new.housing$elem == "crest", 1, 0)
+new.housing$elemedge = ifelse(new.housing$elem == "edge", 1, 0)
+new.housing$elemedison = ifelse(new.housing$elem == "edison", 1, 0)
+new.housing$elemharris = ifelse(new.housing$elem == "harris", 1, 0)
+new.housing$elemparker = ifelse(new.housing$elem == "parker", 1, 0)
+new.housing = new.housing[,-10]
+new.housing = new.housing[,-10]
+```
+
+```{r}
+regfit.new.housing = regsubsets(price ~ size + lot + bath + bedrooms + agestandardized + garagesize + statuspen + statussld + elemcrest + elemedge + elemedison + elemharris + elemparker, data = new.housing, nvmax = 18)
+new.reg.summary = summary(regfit.new.housing)
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(new.reg.summary$rsq,xlab="Number of Variables",ylab="R-squared",type="l")
+which.max(new.reg.summary$rsq)
+plot(new.reg.summary$adjr2,xlab="Number of Variables",ylab="Adjusted RSq",type="l")
+which.max(new.reg.summary$adjr2)
+points(9,new.reg.summary$adjr2[9], col="red",cex=2,pch=20)
+plot(new.reg.summary$cp,xlab="Number of Variables",ylab="Cp",type='l')
+which.min(new.reg.summary$cp)
+points(6,new.reg.summary$cp[6],col="red",cex=2,pch=20)
+which.min(new.reg.summary$bic)
+plot(new.reg.summary$bic,xlab="Number of Variables",ylab="BIC",type='l')
+points(6,new.reg.summary$bic[6],col="red",cex=2,pch=20)
+```
+
+```{r}
+plot(regfit.new.housing)
+```
+
+As we can observe, the two give identical results, we just have more to work with when it comes to our new dataset. You'll notice that statusact and elemadams are both missing from our new.housing data. This is because we've filled in all the rest of the blanks, so including them as dummy variables would be rendered obsolete (adding a linear dependency, as r so dutifully noted when we put them into the data originally). R automatically ignored them in its analysis of our first housing dataset, and rightfully so.
+
+The second key thing to note is the number of variables that we should be using. Aside from basic R-squared, any of the other three options are viable, but looking at all three paints a picture that points us to choose 6 as our ideal amount of variables. The biggest factor in the decision comes in the form of the BIC's sudden increase after 6. BIC penalizes its score for each variable you add, so at a certain point that penalty starts to outweigh what your variable brings to the table as a predictor. The starkness of this increase indicates that these variables really don't add too much to our model, something also displayed by the marginal increases from 6 to 9 in our Adjusted R-Squared plot. Anywhere from 6 to 9 would work, and when in doubt, simpler is better.
+
+```{r}
+coef(regfit.housing, 6)
+```
+
+```{r}
+coef(regfit.new.housing, 6)
+```
+
+Since our dataset isn't massive, it doesn't look like we'll have to worry about optimizing computing power, so overall selection gives us the best possible model at every amount of variables. Showing the model from both the modified and original dataset once again confirms that the two are identical, giving identical results, and we can now move forward with creating our linear model unhindered by our elementary school districts or status of the home on the market being tied together under one variable.
+
+```{r}
+second.model = lm(price ~ size + lot + bedrooms + statussld + elemedison + elemharris, data = new.housing)
+summary(second.model)
+```
+
+## (c) Creating a training/test split using half of the data
+
+```{r}
+length(new.housing$id)
+set.seed(111)
+training.numbers = sample(76,38)
+new.housing.training = new.housing[training.numbers,]
+new.housing.test = new.housing[-training.numbers,]
+```
+
+## (d) Third candidate model: Using regsubsets over the training data, then the entire data set
+
+```{r}
+regfit.new.housing.training = regsubsets(price ~ size + lot + bath + bedrooms + agestandardized + garagesize + statuspen + statussld + elemcrest + elemedge + elemedison + elemharris + elemparker, data = new.housing.training, nvmax = 14)
+new.reg.training.summary = summary(regfit.new.housing.training)
+```
+
+```{r}
+par(mfrow=c(2,2))
+plot(new.reg.training.summary$rsq,xlab="Number of Variables",ylab="R-squared",type="l")
+which.max(new.reg.training.summary$rsq)
+plot(new.reg.training.summary$adjr2,xlab="Number of Variables",ylab="Adjusted RSq",type="l")
+which.max(new.reg.training.summary$adjr2)
+points(7,new.reg.training.summary$adjr2[7], col="red",cex=2,pch=20)
+plot(new.reg.training.summary$cp,xlab="Number of Variables",ylab="Cp",type='l')
+which.min(new.reg.training.summary$cp)
+points(5,new.reg.training.summary$cp[5],col="red",cex=2,pch=20)
+which.min(new.reg.training.summary$bic)
+plot(new.reg.training.summary$bic,xlab="Number of Variables",ylab="BIC",type='l')
+points(3,new.reg.training.summary$bic[3],col="red",cex=2,pch=20)
+```
+
+Again, we think that there is much to be gleamed from looking at all three possible methods of model selection. This time it looks like 5 is that breakpoint where BIC begins to really rise and the increases in Adjusted R-Squared become less consequential. What was 6-9 has become 5-7, and again, the simpler the better.
+
+```{r}
+coef(regfit.new.housing.training, 5)
+```
+
+```{r}
+coef(regfit.new.housing, 5)
+```
+
+Somewhat reassuringly, our 5 variable model for our training data uses the same predictors as our model for the entire dataset.
+
+```{r}
+third.model = lm(price ~ size + lot + statussld + elemedison + elemharris, data = new.housing)
+summary(third.model)
+```
+
+## (e) Fourth candidate model: Using ridge regression
+
+```{r}
+x.training = model.matrix(price ~ size + lot + bath + bedrooms + yearbuilt + agestandardized + garagesize + statuspen + statussld + elemcrest + elemedge + elemedison + elemharris + elemparker, new.housing.training)[,-1]
+y.training = new.housing.training$price
+x.test = model.matrix(price ~ size + lot + bath + bedrooms + yearbuilt + agestandardized + garagesize + statuspen + statussld + elemcrest + elemedge + elemedison + elemharris + elemparker, new.housing.test)[,-1]
+y.test = new.housing.test$price
+```
+
+```{r}
+set.seed(111)
+cv.out = cv.glmnet(x.training, y.training, alpha=0)
+plot(cv.out)
+```
+
+```{r}
+bestlam = cv.out$lambda.min
+bestlam
+```
+
+```{r}
+fourth.model = glmnet(x.training, y.training, alpha = 0, lambda = bestlam, thresh=1e-12)
+```
+
+Pretty standard ridge regression model creation. The one thing to note would be our ignoring the ID variable in our dataset, since it shouldn't be considered as a predictor in any case.
+
+## (f) Fifth candidate model: Using principal components regression
+
+```{r}
+set.seed(111)
+fifth.model = pcr(price ~ size + lot + bath + bedrooms + yearbuilt + agestandardized + garagesize + statuspen + statussld + elemcrest + elemedge + elemedison + elemharris + elemparker, data = new.housing, scale = TRUE, validation = "CV")
+
+validationplot(fifth.model, val.type = "MSEP")
+```
+
+Again, our plot gives us a range of values to choose for our number of variables, this time from 7 to 9. Simplest is best, so we'll pick 7.
+
+## (g) Comparing our mean squared errors and evaluating our models
+
+```{r}
+mean((new.housing$price-predict(first.model, new.housing))[-training.numbers]^2)
+```
+
+```{r}
+mean((new.housing$price-predict(second.model, new.housing))[-training.numbers]^2)
+```
+
+```{r}
+mean((new.housing$price-predict(third.model, new.housing))[-training.numbers]^2)
+```
+
+```{r}
+fourth.model.prediction = predict(fourth.model, s = bestlam, newx = x.test)
+mean((fourth.model.prediction - y.test)^2)
+```
+
+```{r}
+fifth.model.prediction = predict(fifth.model, x.test, ncomp = 7)
+mean((fifth.model.prediction-y.test)^2)
+```
+
+Taking a look at our mean squared error when trying to predict our test data really shines a light on just how flawed our first model wound up being, not only intuitively but also in its accuracy. The MSE for our initial model is just over 50 times the MSE for the regsubset model with 6 variables.
+
+There are a few things we should keep in mind when analyzing our mean squared errors. First and foremost, there's a decent amount of variability in what our MSEs could be thanks to the 50/50 split of our test and training data. Since our dataset isn't super large, the points that happen to fall into our training data and test data have a large influence on what our MSEs will look like, especially given that some of our models are looking at the whole dataset and others are only looking at the training data. This means that if the training data looks similar to our test data, our fourth and fifth models will have a smaller mean squared error, while if the training and test data don't allign, our fourth and fifth models will suffer. Secondly, the lower the MSE the better, but our different models offer different advantages outside of just accuracy. An example of this would be how we're intending to use our models. If you're in the market for a new home and you want to see how much each aspect of a house costs, the simplicity of our second model offers a lot. If you're a realtor well versed in statistical data analysis and you need the most accurate predictions for the future of the housing market to min-max your profits, the 10% MSE that our fifth model trims makes a big difference. We would say throw away our first, third, and fourth model based on their poor MSEs, and keep our second and fifth model for separate use cases.
+
